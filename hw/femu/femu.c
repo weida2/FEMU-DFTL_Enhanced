@@ -668,6 +668,7 @@ static Property femu_props[] = {
     DEFINE_PROP_UINT8("zns_num_lun", FemuCtrl, zns_params.zns_num_lun, 4),
     DEFINE_PROP_UINT64("zns_read", FemuCtrl, zns_params.zns_read, 40000),
     DEFINE_PROP_UINT64("zns_write", FemuCtrl, zns_params.zns_write, 200000),
+    DEFINE_PROP_UINT64("zns_erase", FemuCtrl, zns_params.zns_erase, 2000000),
     DEFINE_PROP_INT32("secsz", FemuCtrl, bb_params.secsz, 512),
     DEFINE_PROP_INT32("secs_per_pg", FemuCtrl, bb_params.secs_per_pg, 8),
     DEFINE_PROP_INT32("pgs_per_blk", FemuCtrl, bb_params.pgs_per_blk, 256),

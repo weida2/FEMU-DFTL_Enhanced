@@ -45,12 +45,7 @@ struct nand_cmd {
     uint64_t stime;
 };
 
-struct zns_blk {
-    uint64_t next_blk_avail_time;
-};
-
 struct zns_fc {
-    struct zns_blk *blk;
     uint64_t next_fc_avail_time;
 };
 
@@ -63,7 +58,6 @@ struct zns_ssd {
     uint64_t num_ch;
     uint64_t num_lun;
     struct zns_ch *ch;
-    struct write_pointer wp;
 };
 
 enum NvmeZoneAttr {

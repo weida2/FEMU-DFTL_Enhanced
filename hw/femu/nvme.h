@@ -1216,10 +1216,11 @@ typedef struct BbCtrlParams {
 } BbCtrlParams;
 
 typedef struct ZNSCtrlParams {
-    uint8_t  zns_num_ch;
-    uint8_t  zns_num_lun;
-    uint64_t  zns_read;
-    uint64_t zns_write;
+    uint8_t     zns_num_ch;
+    uint8_t     zns_num_lun;
+    uint64_t    zns_read;
+    uint64_t    zns_write;
+    uint64_t    zns_erase;
 } ZNSCtrlParams;
 
 typedef struct OcCtrlParams {
