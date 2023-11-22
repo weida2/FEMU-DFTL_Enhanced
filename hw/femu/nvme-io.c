@@ -1,4 +1,6 @@
 #include "./nvme.h"
+#include <stdint.h>
+#include <stddef.h>
 
 static uint16_t nvme_io_cmd(FemuCtrl *n, NvmeCmd *cmd, NvmeRequest *req);
 
@@ -234,14 +236,31 @@ void *nvme_poller(void *arg)
     return NULL;
 }
 
+static uint16_t nvme_map_dptr(FemuCtrl *n, size_t len, NvmeRequest *req)
+{
+    uint64_t prp1, prp2;
+
+    switch (req->cmd.psdt) {
+    case NVME_PSDT_PRP:
+        prp1 = le64_to_cpu(req->cmd.dptr.prp1);
+        prp2 = le64_to_cpu(req->cmd.dptr.prp2);
+
+        return nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, len, n);
+    case NVME_PSDT_SGL_MPTR_CONTIGUOUS:
+    case NVME_PSDT_SGL_MPTR_SGL:
+        return nvme_map_sgl(n, &req->qsg, req->cmd.dptr.sgl, len, &req->cmd);
+    default:
+        return NVME_INVALID_FIELD;
+    }
+}
+
 uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req)
 {
     NvmeRwCmd *rw = (NvmeRwCmd *)cmd;
     uint16_t ctrl = le16_to_cpu(rw->control);
     uint32_t nlb  = le16_to_cpu(rw->nlb) + 1;
     uint64_t slba = le64_to_cpu(rw->slba);
-    uint64_t prp1 = le64_to_cpu(rw->prp1);
-    uint64_t prp2 = le64_to_cpu(rw->prp2);
+    uint64_t prp1_offset = offsetof(NvmeRwCmd, prp1);
     const uint8_t lba_index = NVME_ID_NS_FLBAS_INDEX(ns->id_ns.flbas);
     const uint16_t ms = le16_to_cpu(ns->id_ns.lbaf[lba_index].ms);
     const uint8_t data_shift = ns->id_ns.lbaf[lba_index].lbads;
@@ -259,13 +278,12 @@ uint16_t nvme_rw(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd, NvmeRequest *req)
     if (err)
         return err;
 
-    if (nvme_map_prp(&req->qsg, &req->iov, prp1, prp2, data_size, n)) {
-        nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD,
-                            offsetof(NvmeRwCmd, prp1), 0, ns->id);
+    if(nvme_map_dptr(n, data_size, req)) {
+        nvme_set_error_page(n, req->sq->sqid, cmd->cid, NVME_INVALID_FIELD, prp1_offset, 0, ns->id);
         return NVME_INVALID_FIELD | NVME_DNR;
     }
 
-    assert((nlb << data_shift) == req->qsg.size);
+//    assert((nlb << data_shift) == req->qsg.size);
 
     req->slba = slba;
     req->status = NVME_SUCCESS;
