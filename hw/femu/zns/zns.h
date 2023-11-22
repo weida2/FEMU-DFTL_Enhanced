@@ -58,6 +58,7 @@ struct zns_ssd {
     uint64_t num_ch;
     uint64_t num_lun;
     struct zns_ch *ch;
+    QemuSpin nand_lock;
 };
 
 enum NvmeZoneAttr {

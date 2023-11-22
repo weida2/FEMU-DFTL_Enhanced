@@ -502,6 +502,7 @@ static uint64_t zns_advance_status(FemuCtrl *n, struct nand_cmd *ncmd, struct pp
     uint64_t req_stime = (ncmd->stime == 0) ? \
         qemu_clock_get_ns(QEMU_CLOCK_REALTIME) : ncmd->stime;
 
+    qemu_spin_lock(&zns->nand_lock);
     struct zns_fc *fc = get_fc(zns, ppa);
 
     uint64_t lat = 0;
@@ -535,6 +536,7 @@ static uint64_t zns_advance_status(FemuCtrl *n, struct nand_cmd *ncmd, struct pp
         /* To silent warnings */
         ;
     }
+    qemu_spin_unlock(&zns->nand_lock);
 
     return lat;
 }
@@ -1427,6 +1429,7 @@ static void zns_init_params(FemuCtrl *n)
     for (int i = 0; i < id_zns->num_ch; i++) {
         zns_init_ch(&id_zns->ch[i], id_zns->num_lun);
     }
+    qemu_spin_init(&id_zns->nand_lock);
 
     n->zns = id_zns;
 }
