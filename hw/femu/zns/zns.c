@@ -1438,7 +1438,7 @@ static int zns_init_zone_cap(FemuCtrl *n)
 {
     n->zoned = true;
     n->zasl_bs = NVME_DEFAULT_MAX_AZ_SIZE;
-    n->zone_size_bs = NVME_DEFAULT_ZONE_SIZE;
+    n->zone_size_bs = n->zns_params.zone_size_mb << 20;
     n->zone_cap_bs = 0;
     n->cross_zone_read = false;
     n->max_active_zones = 0;
