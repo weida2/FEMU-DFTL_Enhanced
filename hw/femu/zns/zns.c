@@ -1263,8 +1263,8 @@ static uint16_t zns_read(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
 
     backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write);
 
-    uint64_t slpn = (slba) / 4096;
-    uint64_t elpn = (slba + nlb - 1) / 4096;
+    uint64_t slpn = (slba) / 8;
+    uint64_t elpn = (slba + nlb - 1) / 8;
     uint64_t lpn;
     struct ppa ppa;
     uint64_t sublat = 0, maxlat = 0;
@@ -1338,8 +1338,8 @@ static uint16_t zns_write(FemuCtrl *n, NvmeNamespace *ns, NvmeCmd *cmd,
     backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write);
     zns_finalize_zoned_write(ns, req, false);
 
-    uint64_t slpn = (slba) / 4096;
-    uint64_t elpn = (slba + nlb - 1) / 4096;
+    uint64_t slpn = (slba) / 8;
+    uint64_t elpn = (slba + nlb - 1) / 8;
 
     uint64_t lpn;
     struct ppa ppa;
