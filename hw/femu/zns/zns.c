@@ -1193,6 +1193,27 @@ static uint16_t zns_do_write(FemuCtrl *n, NvmeRequest *req, bool append,
         backend_rw(n->mbe, &req->qsg, &data_offset, req->is_write);
     }
 
+    uint64_t slpn = (slba) / 8;
+    uint64_t elpn = (slba + nlb - 1) / 8;
+
+    uint64_t lpn;
+    struct ppa ppa;
+    uint64_t sublat = 0, maxlat = 0;
+
+    for (lpn = slpn; lpn <= elpn; lpn++) {
+        ppa = lpn_to_ppa(n, ns, lpn);
+
+        struct nand_cmd write;
+        write.cmd = NAND_WRITE;
+        write.stime = req->stime;
+
+        sublat = zns_advance_status(n, &write, &ppa);
+        maxlat = (sublat > maxlat) ? sublat : maxlat;
+    }
+
+    req->reqlat = maxlat;
+    req->expire_time += maxlat;
+
     zns_finalize_zoned_write(ns, req, false);
     return NVME_SUCCESS;
 
