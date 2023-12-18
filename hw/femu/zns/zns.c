@@ -869,8 +869,6 @@ static uint16_t zns_zone_mgmt_send(FemuCtrl *n, NvmeRequest *req)
 {
     NvmeCmd *cmd = (NvmeCmd *)&req->cmd;
     NvmeNamespace *ns = req->ns;
-    uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
-    uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
     NvmeZone *zone;
     uintptr_t *resets;
     uint8_t *zd_ext;
@@ -940,8 +938,14 @@ static uint16_t zns_zone_mgmt_send(FemuCtrl *n, NvmeRequest *req)
             return NVME_INVALID_FIELD | NVME_DNR;
         }
         zd_ext = zns_get_zd_extension(ns, zone_idx);
-        status = dma_write_prp(n, (uint8_t *)zd_ext, n->zd_extension_size, prp1,
-                               prp2);
+        // check prp or sgl
+        if (req->cmd.psdt == NVME_PSDT_PRP) {
+            uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
+            uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
+            status = dma_write_prp(n, (uint8_t *)zd_ext, n->zd_extension_size, prp1, prp2);
+        } else if (req->cmd.psdt == NVME_PSDT_SGL_MPTR_SGL || req->cmd.psdt == NVME_PSDT_SGL_MPTR_CONTIGUOUS) {
+            status = dma_write_sgl(n, (uint8_t *)zd_ext, n->zd_extension_size, req);
+        }
         if (status) {
             return status;
         }
@@ -991,8 +995,6 @@ static uint16_t zns_zone_mgmt_recv(FemuCtrl *n, NvmeRequest *req)
 {
     NvmeCmd *cmd = (NvmeCmd *)&req->cmd;
     NvmeNamespace *ns = req->ns;
-    uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
-    uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
     /* cdw12 is zero-based number of dwords to return. Convert to bytes */
     uint32_t data_size = (le32_to_cpu(cmd->cdw12) + 1) << 2;
     uint32_t dw13 = le32_to_cpu(cmd->cdw13);
@@ -1088,7 +1090,14 @@ static uint16_t zns_zone_mgmt_recv(FemuCtrl *n, NvmeRequest *req)
         }
     }
 
-    status = dma_read_prp(n, (uint8_t *)buf, data_size, prp1, prp2);
+    // check prp or sgl
+    if (req->cmd.psdt == NVME_PSDT_PRP) {
+        uint64_t prp1 = le64_to_cpu(cmd->dptr.prp1);
+        uint64_t prp2 = le64_to_cpu(cmd->dptr.prp2);
+        status = dma_read_prp(n, (uint8_t *)buf, data_size, prp1, prp2);    
+    } else if (req->cmd.psdt == NVME_PSDT_SGL_MPTR_SGL || req->cmd.psdt == NVME_PSDT_SGL_MPTR_CONTIGUOUS) {
+        status = dma_read_sgl(n, (uint8_t *)buf, data_size, req);
+    }
 
     g_free(buf);
 

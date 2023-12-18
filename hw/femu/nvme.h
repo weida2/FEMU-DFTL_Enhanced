@@ -1500,6 +1500,9 @@ uint16_t dma_write_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t
                             prp1, uint64_t prp2);
 uint16_t dma_read_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t
                            prp1, uint64_t prp2);
+// sgl support
+uint16_t dma_write_sgl(FemuCtrl *n, uint8_t *ptr, uint32_t len, NvmeRequest *req);
+uint16_t dma_read_sgl(FemuCtrl *n, uint8_t *ptr, uint32_t len, NvmeRequest *req);
 // uint16_t nvme_map_dptr(FemuCtrl *n, size_t len, NvmeRequest *req);
 uint16_t nvme_map_sgl(FemuCtrl *n, QEMUSGList *sg, NvmeSglDescriptor sgl,
                              size_t len, NvmeCmd *cmd);

@@ -362,3 +362,40 @@ uint16_t dma_read_prp(FemuCtrl *n, uint8_t *ptr, uint32_t len, uint64_t prp1,
 
     return status;
 }
+
+uint16_t dma_write_sgl(FemuCtrl *n, uint8_t *ptr, uint32_t len, NvmeRequest *req)
+{
+    uint16_t status = NVME_SUCCESS;
+
+    if (nvme_map_sgl(n, &req->qsg, req->cmd.dptr.sgl, len, &req->cmd)) {
+        return NVME_INVALID_FIELD | NVME_DNR;
+    }
+    if (req->qsg.nsg > 0) {
+        if (dma_buf_write(ptr, len, NULL, &req->qsg, MEMTXATTRS_UNSPECIFIED)) {
+            status = NVME_INVALID_FIELD | NVME_DNR;
+        }
+        qemu_sglist_destroy(&req->qsg);
+    }
+    // don't process iov
+
+    return status;
+}
+
+uint16_t dma_read_sgl(FemuCtrl *n, uint8_t *ptr, uint32_t len, NvmeRequest *req)
+{
+    uint16_t status = NVME_SUCCESS;
+
+    if (nvme_map_sgl(n, &req->qsg, req->cmd.dptr.sgl, len, &req->cmd)) {
+        return NVME_INVALID_FIELD | NVME_DNR;
+    }
+
+    if (req->qsg.nsg > 0) {
+        if (dma_buf_read(ptr, len, NULL, &req->qsg, MEMTXATTRS_UNSPECIFIED)) {
+            status = NVME_INVALID_FIELD | NVME_DNR;
+        }
+        qemu_sglist_destroy(&req->qsg);
+    }
+    // don't process iov
+
+    return status;
+}

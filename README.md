@@ -13,3 +13,4 @@
 2. 令NVMe SQ/CQ默认开启多线程处理。默认配置`multipoller_enabled=1`，开启多个`to_ftl`和`to_poller`线程加快IO的处理速度。[Issues #2](https://github.com/NNSS-HASCODE/FEMU-Enhanced/issues/2)
 3. 为FEMU添加NVMe SGL支持。FEMU在实际处理IO时通过`memcpy()`来将所需要的数据复制到NVMe所提供的内存地址中，FEMU原版只支持PRP（需要和内核物理页4K对齐），[实验结果证明](https://github.com/vtess/FEMU/pull/129#issuecomment-1815153431)执行一次1024K的`memcpy()`或者多次更大的IO比执行256次4K `memcpy()`更高效，因此将QEMU中NVMe SGL的逻辑移植到了FEMU中。[Issues #3](https://github.com/NNSS-HASCODE/FEMU-Enhanced/issues/3)
 4. FEMU ZNS FTL基础版本。FEMU最新版添加的ZNS FTL功能存在诸多Bug，延迟/性能模拟不准确，相关Bug可见[[FEMU Issues #131]](https://github.com/vtess/FEMU/issues/131)，修复后添加了NAND锁保证多线程FTL的正确性，支持了通过启动脚本配置擦出延迟以及Zone Size，更正了FEMU中的错误代码。[Issues #4](https://github.com/NNSS-HASCODE/FEMU-Enhanced/issues/4)
+5. ZNS模式下除去`zns_read`和`zns_write`外还有其他Nvme Command，需要添加对这些Nvme Command的SGL支持，否则在某些情况下会出错（例如挂载F2FS），通过在`dma.c`添加`dma_read/write_sgl`进行修复。[Issues #5](https://github.com/NNSS-HASCODE/FEMU-Enhanced/issues/5)
