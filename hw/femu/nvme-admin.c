@@ -221,6 +221,16 @@ static void set_pri(void *a, pqueue_pri_t pri)
     ((NvmeRequest *)a)->expire_time = pri;
 }
 
+static pqueue_pri_t get_pri_start(void *a)
+{
+    return ((NvmeRequest *)a)->expire_time_start;
+}
+
+static void set_pri_start(void *a, pqueue_pri_t pri)
+{
+    ((NvmeRequest *)a)->expire_time_start = pri;
+}
+
 static size_t get_pos(void *a)
 {
     return ((NvmeRequest *)a)->pos;
@@ -268,6 +278,10 @@ static void nvme_init_poller(FemuCtrl *n)
             abort();
         }
     }
+
+
+    n->req_list = pqueue_init(FEMU_MAX_INF_REQS, cmp_pri, get_pri_start, set_pri_start,
+                    get_pos, set_pos);
 
     n->poller = g_malloc0(sizeof(QemuThread) * (n->nr_pollers + 1));
     NvmePollerThreadArgument *args = malloc(sizeof(NvmePollerThreadArgument) *

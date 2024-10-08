@@ -1,5 +1,5 @@
 #include "../nvme.h"
-#include "./ftl.h"
+#include "./dftl.h"
 
 static void bb_init_ctrl_str(FemuCtrl *n)
 {
@@ -38,10 +38,10 @@ static void bb_flip(FemuCtrl *n, NvmeCmd *cmd)
         femu_log("%s,FEMU GC Delay Emulation [Disabled]!\n", n->devname);
         break;
     case FEMU_ENABLE_DELAY_EMU:
-        ssd->sp.pg_rd_lat = n->bb_params.pg_rd_lat;
-        ssd->sp.pg_wr_lat = n->bb_params.pg_wr_lat;
-        ssd->sp.blk_er_lat = n->bb_params.blk_er_lat;
-        ssd->sp.ch_xfer_lat = n->bb_params.ch_xfer_lat;
+        ssd->sp.pg_rd_lat = NAND_READ_LATENCY;
+        ssd->sp.pg_wr_lat = NAND_PROG_LATENCY;
+        ssd->sp.blk_er_lat = NAND_ERASE_LATENCY;
+        ssd->sp.ch_xfer_lat = 0;
         femu_log("%s,FEMU Delay Emulation [Enabled]!\n", n->devname);
         break;
     case FEMU_DISABLE_DELAY_EMU:
@@ -64,6 +64,18 @@ static void bb_flip(FemuCtrl *n, NvmeCmd *cmd)
     case FEMU_DISABLE_LOG:
         n->print_log = false;
         femu_log("%s,Log print [Disabled]!\n", n->devname);
+        break;
+    case FEMU_CLEAR_DFTL_TABLE:
+        // dftl_table_clear(ssd->d_maptbl);
+        // ssd->d_maptbl = NULL;
+        // ssd->d_maptbl = dftl_table_init(ssd->sp.tt_pgs);
+        // femu_log("ssd.dmaptbl.w_cnt: %lu, r_cnt: %lu",
+        //         ssd->d_maptbl->counter.group_write_cnt, ssd->d_maptbl->counter.group_read_cnt);
+        // femu_log("%s,DFTL_clear!\n", n->devname);
+        break;  
+    case FEMU_DFTL_Static:
+        dftl_static(ssd->d_maptbl, n);
+        femu_log("%s,static success!\n", n->devname);
         break;
     default:
         printf("FEMU:%s,Not implemented flip cmd (%lu)\n", n->devname, cdw10);

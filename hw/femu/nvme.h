@@ -47,6 +47,12 @@
 #define NVME_ID_NS_LBAF_DS(ns, lba_index) (ns->id_ns.lbaf[lba_index].lbads)
 #define NVME_ID_NS_LBAF_MS(ns, lba_index) (ns->id_ns.lbaf[lba_index].ms)
 
+enum {
+    ReqInitial = 1,
+    ReqCache   = 2,
+    ReqResend  = 3,
+};
+
 typedef struct NvmeBar {
     uint64_t    cap;
     uint32_t    vs;
@@ -1043,6 +1049,11 @@ typedef struct NvmeRequest {
 
     /* position in the priority queue for delay emulation */
     size_t                  pos;
+
+    uint64_t                 id;
+    int64_t                 expire_time_start;
+    int                     stag;
+
 } NvmeRequest;
 
 typedef struct DMAOff {
@@ -1410,6 +1421,10 @@ typedef struct FemuCtrl {
 
     /* Nand Flash Type: SLC/MLC/TLC/QLC/PLC */
     uint8_t         flash_type;
+
+    uint64_t         id;
+    pqueue_t        *req_list;
+
 } FemuCtrl;
 
 typedef struct NvmePollerThreadArgument {

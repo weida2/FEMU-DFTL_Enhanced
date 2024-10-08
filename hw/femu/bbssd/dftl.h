@@ -1,16 +1,30 @@
-#ifndef __FEMU_FTL_H
-#define __FEMU_FTL_H
-
 #include "../nvme.h"
+
+// #include "test.hpp"
 
 #define INVALID_PPA     (~(0ULL))
 #define INVALID_LPN     (~(0ULL))
 #define UNMAPPED_PPA    (~(0ULL))
 
+#define ENTRY_PER_PAGE  (1024) // 4KB / 4B = 1024
+#define CMT_ratio       1/128     // 1/4MB
+
+#define BLK_BITS    (16)
+#define PG_BITS     (16)
+#define SEC_BITS    (8)
+#define PL_BITS     (8)
+#define LUN_BITS    (8)
+#define CH_BITS     (7)
+// 1k * 4KB = 4MB 假设SSD内写入缓冲区的大小为 4MB 可以缓存1k条lpa：ppa条目
+
 enum {
     NAND_READ =  0,
     NAND_WRITE = 1,
     NAND_ERASE = 2,
+
+    NAND_READ_LATENCY = 40000,
+    NAND_PROG_LATENCY = 200000,
+    NAND_ERASE_LATENCY = 2000000,
 };
 
 enum {
@@ -38,15 +52,20 @@ enum {
     FEMU_RESET_ACCT = 5,
     FEMU_ENABLE_LOG = 6,
     FEMU_DISABLE_LOG = 7,
+
+    FEMU_CLEAR_DFTL_TABLE = 10,
+    FEMU_DFTL_Static      = 11,
+
+
+};
+
+enum {
+    NONE  = 0,
+    DATA  = 1,
+    TRANS = 2,
 };
 
 
-#define BLK_BITS    (16)
-#define PG_BITS     (16)
-#define SEC_BITS    (8)
-#define PL_BITS     (8)
-#define LUN_BITS    (8)
-#define CH_BITS     (7)
 
 /* describe a physical page addr */
 struct ppa {
@@ -146,6 +165,9 @@ struct ssdparams {
     int blks_per_line;
     int tt_lines;
 
+    int pls_per_line;
+    int luns_per_line;
+
     int pls_per_ch;   /* # of planes per channel */
     int tt_pls;       /* total # of planes in the SSD */
 
@@ -159,6 +181,8 @@ typedef struct line {
     QTAILQ_ENTRY(line) entry; /* in either {free,victim,full} list */
     /* position in the priority queue for victim lines */
     size_t                  pos;
+
+    int type;   // DATA:1, TRANS:2
 } line;
 
 /* wp: record next write addr */
@@ -175,9 +199,11 @@ struct line_mgmt {
     struct line *lines;
     /* free line list, we only need to maintain a list of blk numbers */
     QTAILQ_HEAD(free_line_list, line) free_line_list;
-    pqueue_t *victim_line_pq;
     //QTAILQ_HEAD(victim_line_list, line) victim_line_list;
     QTAILQ_HEAD(full_line_list, line) full_line_list;
+    
+    pqueue_t *victim_line_pq; // for GC
+
     int tt_lines;
     int free_line_cnt;
     int victim_line_cnt;
@@ -190,14 +216,109 @@ struct nand_cmd {
     int64_t stime; /* Coperd: request arrival time */
 };
 
+typedef struct Node {
+    uint64_t page_idx;
+    uint64_t *l2p_entries;   // pair<int, int>[0~1024] l2p
+    uint64_t ppn;
+
+    bool update_in_flash;    // cache 和 nand_flash 的一致性判断
+
+    struct Node *pre;
+    struct Node *next;
+    
+    struct Node *hash_next;  // ??链式哈希值, 用于链式哈希的同一个%hash=key的下一个指针结点
+} Node;
+
+
+typedef struct LRUCache {
+    uint64_t capacity;
+    uint64_t count;
+    
+    Node *head;
+    Node *tail;
+
+    Node **hashTable; // ??链式哈希？
+
+    uint8_t *flash_bmp;
+} LRUCache;
+
+
+typedef struct Cnt {
+
+
+    int group_write_cnt;
+    uint64_t *has_tbl;
+    uint64_t write_maxLBA; 
+    uint64_t write_minLBA;
+
+
+    int group_read_cnt;
+    int group_read_miss; 
+
+    int group_cmt_hit;
+    int group_cmt_miss;
+
+    int evit_cnt;
+    int gc_data_cnt;
+    int gc_trans_cnt;
+
+    // request_cnt
+    int req_dely;
+    int req_nodely;
+
+}Cnt;
+
+
+
+
+
+// DFTL_MAPPING_Table
+typedef struct G_map_entry {
+    uint64_t ppn;
+
+} G_map_entry;
+
+typedef struct Node_entry {
+    uint64_t node_idx;
+    struct nand_lun* rely_lun;
+    uint64_t lun_end_time;
+    
+   //QTAILQ_HEAD(rely_req_list, NvmeRequest) rely_req_list;
+    int tag;
+    int num_req;
+
+} Node_entry;
+
+
+
+typedef struct DFTLTable {
+    LRUCache *CMT;    
+    LRUCache *nand_cache; 
+
+    G_map_entry *GTD;
+    
+    Node_entry* nodeTag;
+    
+    struct Cnt counter;    
+} DFTLTable;
+
+
+
+
 struct ssd {
     char *ssdname;
     struct ssdparams sp;
     struct ssd_channel *ch;
     struct ppa *maptbl; /* page level mapping table */
     uint64_t *rmap;     /* reverse mapptbl, assume it's stored in OOB */
-    struct write_pointer wp;
+
+    struct write_pointer d_wp;   // datablock wp    
     struct line_mgmt lm;
+
+
+    // dftl.struct
+    DFTLTable* d_maptbl;
+    struct write_pointer  t_wp;  // translation block wp;
 
     /* lockless ring for communication with NVMe IO thread */
     struct rte_ring **to_ftl;
@@ -207,6 +328,7 @@ struct ssd {
 };
 
 void ssd_init(FemuCtrl *n);
+
 
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \
@@ -230,4 +352,3 @@ void ssd_init(FemuCtrl *n);
 #define ftl_assert(expression)
 #endif
 
-#endif

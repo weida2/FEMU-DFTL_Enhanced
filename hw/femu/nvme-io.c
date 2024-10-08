@@ -70,6 +70,13 @@ static void nvme_process_sq_io(void *opaque, int index_poller)
         req->cmd_opcode = cmd.opcode;
         memcpy(&req->cmd, &cmd, sizeof(NvmeCmd));
 
+        req->stag = ReqInitial;
+        req->expire_time_start = req->stime;
+        if (req->id == 0) {
+            req->id = n->id;
+            n->id++;
+        }
+
         if (n->print_log) {
             femu_debug("%s,cid:%d\n", __func__, cmd.cid);
         }
@@ -129,6 +136,7 @@ static void nvme_process_cq_cpl(void *arg, int index_poller)
     NvmeRequest *req = NULL;
     struct rte_ring *rp = n->to_ftl[index_poller];
     pqueue_t *pq = n->pq[index_poller];
+    pqueue_t *tmp_pq = n->req_list;
     uint64_t now;
     int processed = 0;
     int rc;
@@ -146,7 +154,12 @@ static void nvme_process_cq_cpl(void *arg, int index_poller)
         }
         assert(req);
 
-        pqueue_insert(pq, req);
+        if (req->stag != ReqCache) { 
+            pqueue_insert(pq, req);
+        }
+        else {
+            pqueue_insert(tmp_pq, req);
+        }
     }
 
     while ((req = pqueue_peek(pq))) {
@@ -197,6 +210,9 @@ void *nvme_poller(void *arg)
     FemuCtrl *n = ((NvmePollerThreadArgument *)arg)->n;
     int index = ((NvmePollerThreadArgument *)arg)->index;
     int i;
+    uint64_t now;
+    NvmeRequest *req = NULL;
+    pqueue_t *pq = n->req_list; 
 
     switch (n->multipoller_enabled) {
     case 1:
@@ -220,14 +236,32 @@ void *nvme_poller(void *arg)
                 usleep(1000);
                 continue;
             }
-
-            for (i = 1; i <= n->nr_io_queues; i++) {
+             
+            // 正常从SQ队列中取req
+            for (int i = 1; i <= n->nr_io_queues; i++) {
                 NvmeSQueue *sq = n->sq[i];
                 NvmeCQueue *cq = n->cq[i];
+
                 if (sq && sq->is_active && cq && cq->is_active) {
                     nvme_process_sq_io(sq, index);
                 }
             }
+
+            // 从暂存队列中取req
+            now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+            while ((req = pqueue_peek(pq))) {
+                if (now < req->expire_time_start) {
+                    break;
+                }
+
+                req->stag = ReqResend;
+                pqueue_pop(pq);
+
+                int rc = femu_ring_enqueue(n->to_ftl[index], (void *)&req, 1);
+                if (rc != 1) {
+                    femu_err("enqueue failed, ret=%d\n", rc);
+                }
+            }     
             nvme_process_cq_cpl(n, index);
         }
         break;
