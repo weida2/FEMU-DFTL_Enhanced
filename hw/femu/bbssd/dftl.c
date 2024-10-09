@@ -3,12 +3,15 @@ static void *ftl_thread(void *arg);
 static uint64_t translation_page_write(struct ssd *ssd, uint64_t vpn);
 static uint64_t translation_page_read(struct ssd *ssd, uint64_t vpn, NvmeRequest *req, struct nand_lun **trans_lun);
 
-uint64_t dftl_evict(DFTLTable *d_maptbl, LRUCache *cache, LRUCache* nand_cache, uint64_t *lat, struct ssd* ssd);
+uint64_t dftl_evict(DFTLTable *d_maptbl, LRUCache *cache, LRUCache* nand_cache, uint64_t *lat, struct ssd* ssd, NvmeRequest *req);
 uint64_t addNodeToNandCache(LRUCache *nand_cache, Node *node);
 static uint64_t ssd_advance_status(struct ssd *ssd, struct ppa *ppa, struct
         nand_cmd *ncmd);
 static inline struct ppa pgidx2ppa(struct ssd *ssd, uint64_t pgidx);
-
+static inline bool mapped_ppa(struct ppa *ppa);
+static uint64_t ppa2pgidx(struct ssd *ssd, struct ppa *ppa);
+static inline struct ppa get_maptbl_ent(struct ssd *ssd, uint64_t lpn);
+uint64_t get_gtd_ent(DFTLTable *d_tbl, uint64_t vpn);
 
 /**
  * @brief DFTL_method
@@ -202,10 +205,10 @@ void removeByKey(LRUCache *cache, uint64_t key) {
 }
 
 // 新的Node-> page_idx 
-uint64_t addNodeToCache(DFTLTable *d_maptbl, LRUCache *cache, LRUCache *nand_cache, Node *node, bool *evict_happen, uint64_t *evict_key ,uint64_t* lat, struct ssd *ssd) {
+uint64_t addNodeToCache(DFTLTable *d_maptbl, LRUCache *cache, LRUCache *nand_cache, Node *node, bool *evict_happen, uint64_t *evict_key ,uint64_t* lat, struct ssd *ssd, NvmeRequest *req) {
     if (cache->count >= cache->capacity) {
         *evict_happen = true;
-        *evict_key = dftl_evict(d_maptbl, cache, nand_cache, lat, ssd);
+        *evict_key = dftl_evict(d_maptbl, cache, nand_cache, lat, ssd, req);
     }
 
     uint64_t index = hash(node->page_idx, cache->capacity);
@@ -263,7 +266,7 @@ uint64_t lru_get(DFTLTable *d_maptbl, LRUCache *cache, uint64_t key, struct ssd*
     return UNMAPPED_PPA;
 }
 
-void lru_put(DFTLTable *d_maptbl, LRUCache *cache,LRUCache *nand_cache,uint64_t key, uint64_t value, struct ssd* ssd, uint64_t *lat) {
+void lru_put(DFTLTable *d_maptbl, LRUCache *cache,LRUCache *nand_cache,uint64_t key, uint64_t value, struct ssd* ssd, NvmeRequest *req, uint64_t *lat) {
     uint64_t page_idx = key / ENTRY_PER_PAGE;
     uint64_t hash_index = hash(page_idx, cache->capacity);
 
@@ -330,7 +333,7 @@ void lru_put(DFTLTable *d_maptbl, LRUCache *cache,LRUCache *nand_cache,uint64_t 
         bool evict_happen = false;
         uint64_t evict_key = UNMAPPED_PPA;
 
-        addNodeToCache(d_maptbl, cache, nand_cache, new_node, &evict_happen, &evict_key, lat, ssd);
+        addNodeToCache(d_maptbl, cache, nand_cache, new_node, &evict_happen, &evict_key, lat, ssd, req);
     // }
     return ;
 }
@@ -364,7 +367,7 @@ void nand_cache_update(LRUCache *nand_cache,uint64_t key, uint64_t value) {
  * 
  */
 
-uint64_t dftl_evict(DFTLTable *d_maptbl, LRUCache *cache, LRUCache* nand_cache, uint64_t *lat, struct ssd* ssd) {
+uint64_t dftl_evict(DFTLTable *d_maptbl, LRUCache *cache, LRUCache* nand_cache, uint64_t *lat, struct ssd* ssd, NvmeRequest *req) {
     if (cache->count >= cache->capacity) {
         Node *lastNode = cache->tail;
         if (lastNode) {
@@ -399,21 +402,38 @@ uint64_t dftl_evict(DFTLTable *d_maptbl, LRUCache *cache, LRUCache* nand_cache, 
                     d_maptbl->counter.evit_cnt++;
 
                     // flush策略, 先读后写
-                    
-                    int cnt = 0;
-                    for (int i = 0; i < ENTRY_PER_PAGE; i++) {
-                        if (lastNode->l2p_entries[i] != UNMAPPED_PPA) {
-                            cnt++;
+                    uint64_t ret_ppn = get_gtd_ent(ssd->d_maptbl, lastNode->page_idx);
+                    if (ret_ppn != UNMAPPED_PPA) {
+                        struct ppa ret_ppa;
+                        uint64_t r_lat = 0;
+                        ret_ppa = pgidx2ppa(ssd, ret_ppn);
+                        struct nand_cmd trd;
+                        trd.type = USER_IO;
+                        trd.cmd  = NAND_READ;
+                        trd.stime = req->stime;
+                        r_lat = ssd_advance_status(ssd, &ret_ppa, &trd);
+                        (*lat) += r_lat;
+
+                        // update evict Node
+                        for (int i = 0; i < ENTRY_PER_PAGE; i++) {
+                            if (lastNode->l2p_entries[i] == UNMAPPED_PPA) {
+                                uint64_t lpn_i = lastNode->page_idx * ENTRY_PER_PAGE + i;
+                                struct ppa ppa_i;
+                                ppa_i = get_maptbl_ent(ssd, lpn_i);
+                                if (mapped_ppa(&ppa_i)) {
+                                    uint64_t ppn_i = ppa2pgidx(ssd, &ppa_i);
+                                    lastNode->l2p_entries[i] = ppn_i;                                    
+                                }
+                            } 
                         } 
                     }
-                    femu_debug("[dftl_evict]: evict happen, 刷入闪存页号: %lu, valid_cnt: %d\n", lastNode->page_idx, cnt);
+
                     // update gtd & write node_page to flash & simulat lat
-                    uint64_t wr_lat = 0;
-                    wr_lat = translation_page_write(ssd, page_idx);
-                    (*lat) += wr_lat;
+                    uint64_t w_lat = 0;
+                    w_lat = translation_page_write(ssd, page_idx);
+                    (*lat) += w_lat;
                     
-                    addNodeToNandCache(nand_cache, lastNode); 
-                    
+                    addNodeToNandCache(nand_cache, lastNode);  
                 }
                 // upate CMT bitmap
                 uint64_t bmp_idx = lastNode->page_idx / 8;
@@ -460,7 +480,7 @@ uint64_t move_node_from_nand_to_cache(DFTLTable *d_maptbl, LRUCache *cache, LRUC
     uint64_t trans_lat = translation_page_read(ssd, page_idx, req, trans_lun);
 
     (*lat) += trans_lat;
-    addNodeToCache(d_maptbl, cache, nand_cache, cur, &evict_happen, &evict_key, lat, ssd);
+    addNodeToCache(d_maptbl, cache, nand_cache, cur, &evict_happen, &evict_key, lat, ssd, req);
 
     // uint64_t bmp_idx = cur->page_idx / 8;
     // uint8_t  bit_idx = cur->page_idx % 8;
@@ -645,8 +665,8 @@ uint64_t dftl_get(DFTLTable *table, uint64_t lpn ,uint64_t* lat, struct ssd* ssd
 }
 
 
-void dftl_put(DFTLTable* table, uint64_t lpn, uint64_t ppn, struct ssd *ssd, uint64_t *lat) {
-    lru_put(table, table->CMT, table->nand_cache, lpn, ppn, ssd, lat);
+void dftl_put(DFTLTable* table, uint64_t lpn, uint64_t ppn, struct ssd *ssd, NvmeRequest *req, uint64_t *lat) {
+    lru_put(table, table->CMT, table->nand_cache, lpn, ppn, ssd, req, lat);
     return ;
 }
 
@@ -1820,7 +1840,7 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
         /* new write */
         ppa = get_new_page(ssd, DATA);
         uint64_t ppn = ppa2pgidx(ssd, &ppa);
-        dftl_put(ssd->d_maptbl, lpn, ppn, ssd, &w_translat);
+        dftl_put(ssd->d_maptbl, lpn, ppn, ssd, req, &w_translat);
         /* update maptbl */
         set_maptbl_ent(ssd, lpn, &ppa);
         /* update rmap */

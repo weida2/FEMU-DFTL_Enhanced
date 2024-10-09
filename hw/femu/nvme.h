@@ -342,19 +342,19 @@ typedef struct NvmeCmd {
     uint16_t    opcode : 8;
     uint16_t    fuse   : 2;
     uint16_t    res1   : 4;
-    uint16_t    psdt   : 2;
-    uint16_t    cid;
-    uint32_t    nsid;
-    uint64_t    res2;
-    uint64_t    mptr;
-    NvmeCmdDptr dptr;
+    uint16_t    psdt   : 2;   
+    uint16_t    cid;          
+    uint32_t    nsid;           // SQ_cmd 1
+    uint64_t    res2;           // SQ_cmd 2
+    uint64_t    mptr;           // SQ_cmd 3
+    NvmeCmdDptr dptr;           // SQ_cmd 4, 5  
     uint32_t    cdw10;
-    uint32_t    cdw11;
-    uint32_t    cdw12;
-    uint32_t    cdw13;
+    uint32_t    cdw11;          // SQ_cmd 6
+    uint32_t    cdw12;  
+    uint32_t    cdw13;          // SQ_cmd 7
     uint32_t    cdw14;
-    uint32_t    cdw15;
-} NvmeCmd;
+    uint32_t    cdw15;          // SQ_cmd 8
+} NvmeCmd;                      // 64B entry(8B)
 
 #define NVME_CMD_FLAGS_FUSE(flags) (flags & 0x3)
 #define NVME_CMD_FLAGS_PSDT(flags) ((flags >> 6) & 0x3)
@@ -556,16 +556,17 @@ typedef struct NvmeAerResult {
 typedef struct NvmeCqe {
     union {
         struct {
-            uint32_t    result;
-            uint32_t    rsvd;
+            uint32_t    result;  // CQ_cmd 1
+            uint32_t    rsvd;    // CQ_cmd 2
         } n;
         uint64_t res64;
     };
-    uint16_t    sq_head;
-    uint16_t    sq_id;
-    uint16_t    cid;
-    uint16_t    status;
-} NvmeCqe;
+    uint16_t    sq_head;      
+    uint16_t    sq_id;    // CQ_cmd 3
+    uint16_t    cid;      
+    uint16_t    status;   // CQ_cmd 4 
+    //uin8_t    phase_tag : 1; // (Phase bit) Host通过CQ_cqe的Phase bit (0, 1)信息就能判断中CQ Tail的位置
+} NvmeCqe;  // 16B entry(4B)
 
 enum NvmeStatusCodes {
     NVME_SUCCESS                = 0x0000,
