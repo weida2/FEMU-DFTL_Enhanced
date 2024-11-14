@@ -1,5 +1,5 @@
 # FEMU-DFTL_Enhanced
-## 解决FEMU关于DFTL中的经典双读问题的延迟模拟，使其能够在理论上正确且最优地模拟读延迟
+## 优化FEMU中DFTL的双读问题的延迟模拟，使其在理论上能够准确且最优地反映读延迟。
 Resolve the classic double-read dependency issue (multiple-read problem) in FEMU regarding DFTL (A type of FTL that stores the mapping table in flash memory), enabling it to theoretically and optimally simulate the latency corresponding to the multiple-read problem.
 
 
