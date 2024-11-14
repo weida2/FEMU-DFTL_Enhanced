@@ -13,3 +13,12 @@ Resolve the classic double-read dependency issue (multiple-read problem) in FEMU
 
 # 修改日志
 1. 解决FEMU-FTL线程中延迟模拟的读依赖问题。[Issues #9](https://github.com/NNSS-HASCODE/FEMU-Enhanced/issues/9)
+    - 具体问题场景为:
+    
+      DFTL 先加载映射表产生一次闪存读，再读数据产生二段读，理论上这样应该是串行操作。但在FEMU中这两次读请求如果在不同的LUN上，比如数据页在LUN1上，映射表页在LUN2上，这样的话就变成了读数据页和读映射表页就变成了并行操作。
+    - 可能的解决方案:
+  
+      为了体现并行的影响，阻塞住数据页所在的LUN1，等读映射表页LUN2处理完后，再释放LUN1来读取数据页。但这样缺点的话数据页LUN1在LUN2处理完之前不能服务与其他请求，造成性能下降
+    - 实现的解决方案:
+     
+      一段读之后将直接释放LUN1，将请求暂存进tmp_sq，等LUN2处理完后再把让请求丢进FTL线程中使其被二次被调度
